@@ -1,70 +1,94 @@
 # ABC CINEMAS - Utility Functions
-# ================================
-# Common utility functions used throughout the application
+# ===============================
+# Helper functions for the application
 
 import os
-from PIL import Image, ImageTk
-import config
+import hashlib
 from datetime import datetime
+from PIL import Image
+import config
 
 class Utils:
     """
-    Utility functions for the application.
+    Utility class containing helper functions.
     """
     
     @staticmethod
-    def load_image(image_path, width=200, height=300):
+    def hash_password(password):
         """
-        Load and resize an image from a file path.
-        Returns a PhotoImage suitable for Tkinter.
+        Hash a password using SHA256.
         
         Args:
-            image_path (str): Path to image file
-            width (int): Target width in pixels
-            height (int): Target height in pixels
+            password (str): Plain text password
         
         Returns:
-            ImageTk.PhotoImage or None
+            str: Hashed password
         """
-        try:
-            if not os.path.exists(image_path):
-                # Use placeholder if file doesn't exist
-                image_path = config.PLACEHOLDER_POSTER
-                if not os.path.exists(image_path):
-                    return None
-            
-            image = Image.open(image_path)
-            image = image.resize((width, height), Image.Resampling.LANCZOS)
-            photo = ImageTk.PhotoImage(image)
-            return photo
-        except Exception as e:
-            print(f"Error loading image {image_path}: {e}")
-            return None
+        return hashlib.sha256(password.encode()).hexdigest()
     
     @staticmethod
-    def create_placeholder_image(width=200, height=300):
+    def verify_password(password, hashed_password):
         """
-        Create a placeholder image when poster cannot be loaded.
+        Verify a password against its hash.
         
         Args:
-            width (int): Image width
-            height (int): Image height
+            password (str): Plain text password
+            hashed_password (str): Hashed password from database
         
         Returns:
-            ImageTk.PhotoImage
+            bool: True if password matches, False otherwise
         """
-        try:
-            image = Image.new('RGB', (width, height), color=config.ACCENT_COLOR)
-            photo = ImageTk.PhotoImage(image)
-            return photo
-        except Exception as e:
-            print(f"Error creating placeholder: {e}")
-            return None
+        return Utils.hash_password(password) == hashed_password
+    
+    @staticmethod
+    def validate_email(email):
+        """
+        Validate email format.
+        
+        Args:
+            email (str): Email address
+        
+        Returns:
+            bool: True if valid email format
+        """
+        import re
+        pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        return re.match(pattern, email) is not None
+    
+    @staticmethod
+    def validate_phone(phone):
+        """
+        Validate phone number (10 digits).
+        
+        Args:
+            phone (str): Phone number
+        
+        Returns:
+            bool: True if valid phone format
+        """
+        import re
+        pattern = r'^[0-9]{10}$'
+        return re.match(pattern, phone) is not None
+    
+    @staticmethod
+    def validate_password(password):
+        """
+        Validate password strength.
+        
+        Args:
+            password (str): Password to validate
+        
+        Returns:
+            tuple: (is_valid: bool, message: str)
+        """
+        if len(password) < config.MIN_PASSWORD_LENGTH:
+            return False, f"Password must be at least {config.MIN_PASSWORD_LENGTH} characters long."
+        return True, "Password is valid."
     
     @staticmethod
     def format_currency(amount):
         """
-        Format amount as Indian Rupees.
+        Format amount as Indian currency (₹).
         
         Args:
             amount (float): Amount to format
@@ -72,81 +96,89 @@ class Utils:
         Returns:
             str: Formatted currency string
         """
-        return f"₹{amount:,.2f}"
+        return f"₹{float(amount):.2f}"
     
     @staticmethod
     def format_date(date_obj):
         """
-        Format date in readable format.
+        Format date for display.
         
         Args:
-            date_obj: Date object or string
+            date_obj (datetime or str): Date to format
         
         Returns:
             str: Formatted date
         """
         if isinstance(date_obj, str):
-            return date_obj
-        return date_obj.strftime("%d %B %Y")
+            try:
+                date_obj = datetime.strptime(date_obj, '%Y-%m-%d')
+            except:
+                return str(date_obj)
+        
+        return date_obj.strftime('%d-%b-%Y')
     
     @staticmethod
     def format_time(time_obj):
         """
-        Format time in 12-hour format.
+        Format time for display.
         
         Args:
-            time_obj: Time object or string
+            time_obj (str or time): Time to format
         
         Returns:
             str: Formatted time
         """
         if isinstance(time_obj, str):
-            # Convert HH:MM:SS to HH:MM AM/PM
-            time_parts = time_obj.split(':')
-            hour = int(time_parts[0])
-            minute = time_parts[1]
-            
-            period = 'AM' if hour < 12 else 'PM'
-            if hour > 12:
-                hour -= 12
-            elif hour == 0:
-                hour = 12
-            
-            return f"{hour:02d}:{minute} {period}"
-        return str(time_obj)
+            try:
+                time_obj = datetime.strptime(time_obj, '%H:%M:%S').time()
+            except:
+                return str(time_obj)
+        
+        return time_obj.strftime('%I:%M %p')
     
     @staticmethod
     def generate_booking_code():
         """
         Generate a unique booking code.
-        Format: ABC + Date (YYYYMMDD) + Sequential number
         
         Returns:
-            str: Booking code
+            str: Booking code (format: ABCYYMMDDxxxxx)
         """
-        from database import Database
-        
-        date_str = datetime.now().strftime("%Y%m%d")
-        
-        # Query the last booking code for today
-        query = """
-            SELECT MAX(CAST(SUBSTRING(booking_code, 10) AS UNSIGNED)) as last_num
-            FROM bookings
-            WHERE booking_code LIKE %s
+        import random
+        timestamp = datetime.now().strftime('%y%m%d')
+        random_part = ''.join([str(random.randint(0, 9)) for _ in range(5)])
+        return f"ABC{timestamp}{random_part}"
+    
+    @staticmethod
+    def load_image(image_path, width=None, height=None):
         """
-        result = Database.execute_query(
-            query,
-            (f"ABC{date_str}%",),
-            fetch_one=True,
-            dictionary=True
-        )
+        Load and optionally resize an image.
         
-        next_num = 1
-        if result and result['last_num']:
-            next_num = result['last_num'] + 1
+        Args:
+            image_path (str): Path to image file
+            width (int): Target width
+            height (int): Target height
         
-        booking_code = f"ABC{date_str}{next_num:04d}"
-        return booking_code
+        Returns:
+            PIL.Image or None
+        """
+        try:
+            if not os.path.exists(image_path):
+                # Return placeholder if file doesn't exist
+                if os.path.exists(config.PLACEHOLDER_POSTER):
+                    image_path = config.PLACEHOLDER_POSTER
+                else:
+                    return None
+            
+            image = Image.open(image_path)
+            
+            if width and height:
+                image = image.resize((width, height), Image.Resampling.LANCZOS)
+            
+            return image
+        except Exception as e:
+            print(f"Error loading image {image_path}: {e}")
+            return None
     
     @staticmethod
     def ensure_directory_exists(directory):
@@ -155,75 +187,141 @@ class Utils:
         
         Args:
             directory (str): Directory path
-        """
-        if not os.path.exists(directory):
-            os.makedirs(directory)
-    
-    @staticmethod
-    def save_text_file(filename, content):
-        """
-        Save text content to a file.
-        
-        Args:
-            filename (str): File path
-            content (str): Content to save
         
         Returns:
-            bool: True if successful, False otherwise
+            bool: True if directory exists or was created
         """
         try:
-            Utils.ensure_directory_exists(os.path.dirname(filename) or '.')
-            with open(filename, 'w', encoding='utf-8') as f:
-                f.write(content)
+            if not os.path.exists(directory):
+                os.makedirs(directory)
             return True
         except Exception as e:
-            print(f"Error saving file: {e}")
+            print(f"Error creating directory {directory}: {e}")
             return False
     
     @staticmethod
-    def center_window(root, width=1200, height=750):
+    def save_text_file(file_path, content):
         """
-        Center a Tkinter window on the screen.
+        Save text content to file.
         
         Args:
-            root: Tkinter root window
+            file_path (str): Path to save file
+            content (str): Content to save
+        
+        Returns:
+            bool: True if successful
+        """
+        try:
+            # Ensure directory exists
+            directory = os.path.dirname(file_path)
+            if directory:
+                Utils.ensure_directory_exists(directory)
+            
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            return True
+        except Exception as e:
+            print(f"Error saving file {file_path}: {e}")
+            return False
+    
+    @staticmethod
+    def read_text_file(file_path):
+        """
+        Read content from text file.
+        
+        Args:
+            file_path (str): Path to file
+        
+        Returns:
+            str: File content or None
+        """
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                return f.read()
+        except Exception as e:
+            print(f"Error reading file {file_path}: {e}")
+            return None
+    
+    @staticmethod
+    def center_window(window, width, height):
+        """
+        Center a Tkinter window on screen.
+        
+        Args:
+            window: Tkinter window
             width (int): Window width
             height (int): Window height
         """
-        root.geometry(f"{width}x{height}")
+        screen_width = window.winfo_screenwidth()
+        screen_height = window.winfo_screenheight()
         
-        # Get screen dimensions
-        screen_width = root.winfo_screenwidth()
-        screen_height = root.winfo_screenheight()
-        
-        # Calculate position
         x = (screen_width - width) // 2
         y = (screen_height - height) // 2
         
-        root.geometry(f"{width}x{height}+{x}+{y}")
+        window.geometry(f"{width}x{height}+{x}+{y}")
     
     @staticmethod
-    def seats_to_string(seat_list):
+    def get_file_size(file_path):
         """
-        Convert list of seats to readable string.
+        Get file size in bytes.
         
         Args:
-            seat_list (list): List of (row, number) tuples
+            file_path (str): Path to file
         
         Returns:
-            str: Comma-separated seat string
+            int: File size in bytes, or -1 if error
         """
-        return ", ".join([f"{row}{num}" for row, num in seat_list])
+        try:
+            return os.path.getsize(file_path)
+        except Exception as e:
+            print(f"Error getting file size: {e}")
+            return -1
     
     @staticmethod
-    def get_seat_display(seat_info):
+    def file_exists(file_path):
         """
-        Get seat display name from tuple.
+        Check if file exists.
         
         Args:
-            seat_info (tuple): (row_name, seat_number)
+            file_path (str): Path to file
         
         Returns:
-            str: Display name like "A1"
+            bool: True if file exists
         """
-        return f"{seat_info[0]}{seat_info[1]}"
+        return os.path.exists(file_path) and os.path.isfile(file_path)
+    
+    @staticmethod
+    def get_current_timestamp():
+        """
+        Get current timestamp.
+        
+        Returns:
+            str: Current timestamp (YYYY-MM-DD HH:MM:SS)
+        """
+        return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    
+    @staticmethod
+    def get_current_date():
+        """
+        Get current date.
+        
+        Returns:
+            str: Current date (YYYY-MM-DD)
+        """
+        return datetime.now().strftime('%Y-%m-%d')
+    
+    @staticmethod
+    def truncate_string(text, length):
+        """
+        Truncate string to specified length.
+        
+        Args:
+            text (str): Text to truncate
+            length (int): Max length
+        
+        Returns:
+            str: Truncated text with ellipsis if needed
+        """
+        if len(text) > length:
+            return text[:length-3] + "..."
+        return text
