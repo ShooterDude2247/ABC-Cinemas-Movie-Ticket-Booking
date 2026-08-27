@@ -1,16 +1,14 @@
 # ABC CINEMAS - Database Module
-# ==============================
-# Handles all database connectivity and operations
+# =============================
+# Handles all database connections and operations
 
 import mysql.connector
 from mysql.connector import Error
 import config
-from contextlib import contextmanager
 
 class Database:
     """
-    Database class for handling MySQL connections and queries.
-    Provides a centralized connection management system.
+    Database class for managing MySQL connections and operations.
     """
     
     @staticmethod
@@ -19,173 +17,192 @@ class Database:
         Create and return a MySQL database connection.
         
         Returns:
-            mysql.connector.connection.MySQLConnection or None
-        
-        Raises:
-            Error: If connection fails
+            mysql.connector.MySQLConnection or None
         """
         try:
             connection = mysql.connector.connect(**config.DB_CONFIG)
-            return connection
+            if connection.is_connected():
+                return connection
         except Error as e:
-            print(f"Database Connection Error: {e}")
+            print(f"Error connecting to MySQL: {e}")
             return None
     
     @staticmethod
-    @contextmanager
-    def get_db_cursor(dictionary=False):
+    def execute_query(query, params=None, fetch_one=False, fetch_all=False, dictionary=False):
         """
-        Context manager for database cursor.
-        Automatically handles connection and cursor cleanup.
-        
-        Args:
-            dictionary (bool): If True, return results as dictionaries
-        
-        Yields:
-            tuple: (cursor, connection) for use in with statement
-        """
-        connection = Database.get_connection()
-        if not connection:
-            raise Exception("Could not connect to database")
-        
-        cursor = connection.cursor(dictionary=dictionary)
-        try:
-            yield cursor, connection
-        finally:
-            cursor.close()
-            connection.close()
-    
-    @staticmethod
-    def execute_query(query, params=None, fetch_all=False, fetch_one=False, dictionary=False, commit=False):
-        """
-        Execute a database query with proper error handling.
+        Execute a SELECT query and return results.
         
         Args:
             query (str): SQL query to execute
-            params (tuple): Query parameters for parameterized queries
-            fetch_all (bool): Fetch all results
-            fetch_one (bool): Fetch single result
+            params (tuple): Query parameters for prepared statement
+            fetch_one (bool): Return only one row
+            fetch_all (bool): Return all rows
             dictionary (bool): Return results as dictionaries
-            commit (bool): Commit transaction
         
         Returns:
-            Results from query or None on error
+            dict, list, or None depending on parameters
         """
-        try:
-            with Database.get_db_cursor(dictionary=dictionary) as (cursor, connection):
-                if params:
-                    cursor.execute(query, params)
-                else:
-                    cursor.execute(query)
-                
-                if fetch_all:
-                    return cursor.fetchall()
-                elif fetch_one:
-                    return cursor.fetchone()
-                elif commit:
-                    connection.commit()
-                    return cursor.rowcount
-                else:
-                    return cursor.fetchall()
-        
-        except Error as e:
-            print(f"Database Query Error: {e}")
+        connection = Database.get_connection()
+        if not connection:
             return None
-    
-    @staticmethod
-    def insert_data(query, params):
-        """
-        Insert data into database.
         
-        Args:
-            query (str): INSERT query
-            params (tuple): Data to insert
-        
-        Returns:
-            int: Last inserted ID or -1 on error
-        """
         try:
-            with Database.get_db_cursor() as (cursor, connection):
+            cursor = connection.cursor(dictionary=dictionary)
+            
+            if params:
                 cursor.execute(query, params)
-                connection.commit()
-                return cursor.lastrowid
+            else:
+                cursor.execute(query)
+            
+            if fetch_one:
+                result = cursor.fetchone()
+            elif fetch_all:
+                result = cursor.fetchall()
+            else:
+                result = None
+            
+            cursor.close()
+            connection.close()
+            return result
+        
         except Error as e:
-            print(f"Insert Error: {e}")
-            return -1
+            print(f"Query execution error: {e}")
+            print(f"Query: {query}")
+            return None
+        finally:
+            if connection.is_connected():
+                connection.close()
     
     @staticmethod
-    def update_data(query, params):
+    def insert_data(query, params=None):
         """
-        Update data in database.
+        Execute an INSERT query.
         
         Args:
-            query (str): UPDATE query
-            params (tuple): Data to update
+            query (str): SQL INSERT query
+            params (tuple): Query parameters
         
         Returns:
-            int: Number of rows affected or -1 on error
+            int: ID of inserted row, or -1 on error
         """
+        connection = Database.get_connection()
+        if not connection:
+            return -1
+        
         try:
-            with Database.get_db_cursor() as (cursor, connection):
+            cursor = connection.cursor()
+            
+            if params:
                 cursor.execute(query, params)
-                connection.commit()
-                return cursor.rowcount
+            else:
+                cursor.execute(query)
+            
+            connection.commit()
+            inserted_id = cursor.lastrowid
+            
+            cursor.close()
+            return inserted_id
+        
         except Error as e:
-            print(f"Update Error: {e}")
+            print(f"Insert error: {e}")
+            print(f"Query: {query}")
+            connection.rollback()
             return -1
+        finally:
+            if connection.is_connected():
+                connection.close()
     
     @staticmethod
-    def delete_data(query, params):
+    def update_data(query, params=None):
         """
-        Delete data from database.
+        Execute an UPDATE query.
         
         Args:
-            query (str): DELETE query
-            params (tuple): Condition parameters
+            query (str): SQL UPDATE query
+            params (tuple): Query parameters
         
         Returns:
-            int: Number of rows affected or -1 on error
+            int: Number of rows updated, or -1 on error
         """
+        connection = Database.get_connection()
+        if not connection:
+            return -1
+        
         try:
-            with Database.get_db_cursor() as (cursor, connection):
+            cursor = connection.cursor()
+            
+            if params:
                 cursor.execute(query, params)
-                connection.commit()
-                return cursor.rowcount
+            else:
+                cursor.execute(query)
+            
+            connection.commit()
+            rows_affected = cursor.rowcount
+            
+            cursor.close()
+            return rows_affected
+        
         except Error as e:
-            print(f"Delete Error: {e}")
+            print(f"Update error: {e}")
+            print(f"Query: {query}")
+            connection.rollback()
             return -1
+        finally:
+            if connection.is_connected():
+                connection.close()
     
     @staticmethod
-    def transaction(queries_and_params):
+    def delete_data(query, params=None):
         """
-        Execute multiple queries in a single transaction.
-        Rolls back if any query fails.
+        Execute a DELETE query.
         
         Args:
-            queries_and_params (list): List of (query, params) tuples
+            query (str): SQL DELETE query
+            params (tuple): Query parameters
         
         Returns:
-            bool: True if successful, False otherwise
+            int: Number of rows deleted, or -1 on error
         """
+        connection = Database.get_connection()
+        if not connection:
+            return -1
+        
         try:
-            with Database.get_db_cursor() as (cursor, connection):
-                for query, params in queries_and_params:
-                    if params:
-                        cursor.execute(query, params)
-                    else:
-                        cursor.execute(query)
-                
-                connection.commit()
-                return True
+            cursor = connection.cursor()
+            
+            if params:
+                cursor.execute(query, params)
+            else:
+                cursor.execute(query)
+            
+            connection.commit()
+            rows_affected = cursor.rowcount
+            
+            cursor.close()
+            return rows_affected
+        
         except Error as e:
-            print(f"Transaction Error: {e}")
+            print(f"Delete error: {e}")
+            print(f"Query: {query}")
+            connection.rollback()
+            return -1
+        finally:
+            if connection.is_connected():
+                connection.close()
+    
+    @staticmethod
+    def test_connection():
+        """
+        Test database connection.
+        
+        Returns:
+            bool: True if connection successful, False otherwise
+        """
+        connection = Database.get_connection()
+        if connection and connection.is_connected():
+            connection.close()
+            print("Database connection successful!")
+            return True
+        else:
+            print("Failed to connect to database.")
             return False
-
-# Test database connection on module import
-def test_connection():
-    """Test if database connection works"""
-    conn = Database.get_connection()
-    if conn:
-        conn.close()
-        return True
-    return False
